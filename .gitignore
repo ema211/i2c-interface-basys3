@@ -1,0 +1,27 @@
+# IGNORAR carpetas grandes y temporales de Vivado
+i2c_master_controller.cache/
+i2c_master_controller.hw/
+i2c_master_controller.ip_user_files/
+i2c_master_controller.sim/
+
+# IGNORAR archivo de proyecto de Vivado
+i2c_master_controller.xpr
+
+# ARCHIVOS GENERALES QUE VIVADO CREA
+*.jou
+*.log
+*.str
+*.dcp
+*.wdb
+*.xsa
+*.bit
+*.bin
+*.mcs
+*.elf
+*.xml
+
+# TEMPORALES GENERALES
+*.tmp
+*.backup
+*.bak
+*.swp
