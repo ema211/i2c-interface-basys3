@@ -3,9 +3,9 @@
 // Company: 
 // Engineer: 
 // 
-// Create Date: 24.11.2025 11:56:25
+// Create Date: 25.11.2025 16:10:06
 // Design Name: 
-// Module Name: i2c_master_controller
+// Module Name: i2c_core
 // Project Name: 
 // Target Devices: 
 // Tool Versions: 
@@ -20,7 +20,12 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 
-module i2c_master_controller(
-
+module i2c_core(
+    input core_start
     );
+
+
+
+
+    
 endmodule
