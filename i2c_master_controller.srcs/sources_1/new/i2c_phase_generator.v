@@ -7,17 +7,6 @@
 // Description: Generador de fases para el controlador I2C
 // Additional Comments: Evitar frecuencias mayores a 50MHz
 //////////////////////////////////////////////////////////////////////////////////
-/*
-Diagrama de tiempos I2C durante una transmisión completa.
-ESTADO:    [ IDLE ] [     START    ]  [      BIT(1)  ] [...] [      RD    ]  [...]  [    BIT(0)     ]    [      STOP    ]
-FASE:       (fijo)   00  01  10  11    00  01  10  11        00  01  10  11        00  01  10  11     00  01  10  11
-
-SCL:   ... 11111111 1111111111110000  0000111111110000  ...  0000111111110000 ...  0000111111110000   0000111111111111
-                    |   |   |   |  |   |   |   |             |   |   |   |         |   |   |   |      |   |   |   |
-SDA:   ... 11111111 1111111100000000  1111111111111111  ...  zzzzzzzzzzzzzzzz  ... 0000000000000000   0000000011111111
-                           ^          ^       ^              ^       ^             ^       ^          ^       ^
-Eventos:                 START      Setup   Hold          Setup    Hold         Setup     STOP        Setup     STOP
-*/
 
 module i2c_phase_generator #( parameter FRECUENCIA = 100_000)(
     input               reset,
