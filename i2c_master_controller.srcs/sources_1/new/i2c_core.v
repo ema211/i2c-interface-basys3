@@ -83,6 +83,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
     reg       next_restart;
     reg       next_stop;
     reg       next_nack;
+    reg       is_restart; 
 
     // -------------------------------------------------------------------------
     // BLOQUE 1: FSM PRINCIPAL
@@ -98,6 +99,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
             sda_oe_reg  <= 1'b0;
             state       <= ST_IDLE;
             dr_reg      <= 0;
+            is_restart  <= 1'b0;
 
             next_write   <= 1'b0;
             next_read    <= 1'b0;
@@ -122,7 +124,8 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                     next_restart <= 1'b0;
                     next_stop    <= 1'b0;
                     next_nack    <= 1'b0;
-
+                    is_restart <= 1'b0;
+                    
                     if (start) begin
                         busy       <= 1'b1;
                         done       <= 1'b0;
@@ -155,6 +158,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
 
                 ST_SLV_ACK1: begin
                     if (phase_tick) begin
+                        sda_oe_reg <= 1'b0; 
                         if (phase == 2'b00) sda_oe_reg <= 1'b0; 
                         if (phase == 2'b10) ack_error <= sda_in; 
 
@@ -282,8 +286,6 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
             if (phase_tick && (phase == 2'b00)) begin
                 if (next_stop) begin
                     state       <= ST_STOP;
-                    //Forzamos salida a 0 y habilitamos bus INMEDIATAMENTE
-                    // Esto cubre el ciclo de retardo del generador de señales físicas.
                     sda_out_reg <= 1'b0; 
                     sda_oe_reg  <= 1'b1; 
                     next_stop   <= 1'b0;
@@ -291,6 +293,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                     state        <= ST_START;
                     sda_oe_reg   <= 1'b1;
                     next_restart <= 1'b0;
+                    is_restart   <= 1'b1;
                 end else if (next_write) begin
                     state      <= ST_WR;
                     sda_oe_reg <= 1'b1;
@@ -334,7 +337,10 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
             case (state)
                 ST_START: begin
                     case (phase)
-                        2'b00: begin sda_out_reg <= 1'b1; scl_reg <= 1'b1; sda_oe_reg <= 1'b1; end
+                        2'b00: begin 
+                            scl_reg <= (is_restart) ? 1'b0 : 1'b1; 
+                            sda_out_reg <= 1'b1; sda_oe_reg <= 1'b1; 
+                            end
                         2'b01: begin sda_out_reg <= 1'b1; scl_reg <= 1'b1; sda_oe_reg <= 1'b1; end
                         2'b10: begin sda_out_reg <= 1'b0; scl_reg <= 1'b1; sda_oe_reg <= 1'b1; end 
                         2'b11: begin sda_out_reg <= 1'b0; scl_reg <= 1'b0; sda_oe_reg <= 1'b1; end
