@@ -11,6 +11,8 @@
 module i2c_phase_generator #( parameter FRECUENCIA = 100_000)(
     input               reset,
     input               clk_input,
+    input               enable,
+    output reg          tick,
     output reg  [1:0]   phase
     );
 
@@ -20,13 +22,15 @@ module i2c_phase_generator #( parameter FRECUENCIA = 100_000)(
     reg [ANCHO_CUENTA-1:0] counter = 0;
 
     always @(posedge clk_input , posedge reset) begin
-        if(reset) begin
+        if(reset||!enable) begin
             counter <= 0;
             phase <= 2'b00;
+            tick <= 1'b0;
         end
         else begin
             if (counter == DIVISOR-1) begin
                 counter <= 0;
+                tick <= 1'b1;
                 // avanzar fase 0→1→2→3→0
                 if (phase == 2'b11)
                     phase <= 2'b00;
@@ -34,6 +38,7 @@ module i2c_phase_generator #( parameter FRECUENCIA = 100_000)(
                     phase <= phase + 2'b01;
             end else begin
                 counter <= counter + 1;
+                tick <= 1'b0;
             end
         end
     end

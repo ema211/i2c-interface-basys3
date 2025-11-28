@@ -51,26 +51,42 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
 
     assign scl = scl_reg;
 
+    /*
+    Reloj (100MHz):  _-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_
+
+    Phase (Lento):   ________0000000000________1111111111________2222222222_______
+                    (Dura muchos ciclos)
+
+    Phase == 00:     TTTTTTTTTT (Verdadero durante muchos ciclos )
+
+    Phase_Tick:      _________________Λ__________________________Λ__________________
+                    (Solo 1 ciclo)   ^                          ^
+                                     |                          |
+                            "¡Cambié a 01!"             "¡Cambié a 10!"
+    */
+
     wire [1:0]  phase;        // fase 0–3 generada por i2c_phase_generator
+    wire phase_tick;
     i2c_phase_generator #(.FRECUENCIA(F_SCL)) phase_gen (
         .reset    (reset),
         .clk_input(clk_system),
+        .enable   (busy),
+        .tick     (phase_tick),
         .phase    (phase)
     );
 
     //Definición de estados de la FSM principal
     localparam [3:0]
-        ST_POWER_UP   = 4'd0,
-        ST_IDLE       = 4'd1,
-        ST_START      = 4'd2,
-        ST_ADDRRW     = 4'd3,
-        ST_SLV_ACK1   = 4'd4,
-        ST_WR         = 4'd5,
-        ST_SLV_ACK2   = 4'd6,
-        ST_RD         = 4'd7,
-        ST_MASTER_ACK = 4'd8,
-        ST_NACK_ERROR = 4'd9,
-        ST_STOP       = 4'd10;
+        ST_IDLE       = 4'd0,
+        ST_START      = 4'd1,
+        ST_ADDRRW     = 4'd2,
+        ST_SLV_ACK1   = 4'd3,
+        ST_WR         = 4'd4,
+        ST_SLV_ACK2   = 4'd5,
+        ST_RD         = 4'd6,
+        ST_MASTER_ACK = 4'd7,
+        ST_NACK_ERROR = 4'd8,
+        ST_STOP       = 4'd9;
 
     reg [3:0] state;
 
@@ -84,24 +100,10 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
             data_out <= 0;
             bit_cnt <= 3'd0;
             sda_oe_reg  <= 1'b0;
-            state <= ST_POWER_UP;
+            state <= ST_IDLE;
         end
         else begin
             case (state)
-
-                ST_POWER_UP: begin
-                    busy <= 1'b0;
-                    done <= 1'b0;
-                    ack_error <= 1'b0;
-                    data_out <= 0;
-                    bit_cnt <= 3'd0;
-                    sda_oe_reg  <= 1'b0;
-                    // Me quedo en ST_POWER_UP hasta que phase llegue a 2'b11
-                    if (phase == 2'b11) 
-                        state <= ST_IDLE;
-                    else 
-                        state <= ST_POWER_UP;
-                end
 
                 ST_IDLE: begin
                     busy      <= 1'b0;
@@ -110,137 +112,172 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                     data_out  <= 0;
                     bit_cnt   <= 3'd0;
                     sda_oe_reg <= 1'b0;
+
                     if (start) begin
+                        busy <= 1'b1;
+                        done <= 1'b0;
+                        bit_cnt <= 3'd7;
+                        sda_oe_reg  <= 1'b1;
+                        dr_reg <= {slave_address, rw}; // Concatenar dirección y bit R/W
                         state <= ST_START;
                     end
                 end
 
                 ST_START: begin
-                    busy <= 1'b1;
-                    done <= 1'b0;
-                    data_out <= data_in;
-                    bit_cnt <= 3'd7;
-                    sda_oe_reg  <= 1'b1;
-                    dr_reg <= {slave_address, rw}; // Concatenar dirección y bit R/W
-
-                    // Mantengo ST_START hasta que termine la secuencia de START
-                    if (phase == 2'b11)
-                        state <= ST_ADDRRW;
-                    else
-                        state <= ST_START;
+                    if (phase_tick) begin
+                        if (phase == 2'b11)begin
+                            sda_oe_reg <= 1'b1; 
+                            state <= ST_ADDRRW;
+                        end
+                        else
+                            state <= ST_START;
+                    end
                 end
 
                 ST_ADDRRW: begin
-                    busy      <= 1'b1;
-                    done      <= 1'b0;
-                    sda_oe_reg <= 1'b1;
+                    if (phase_tick) begin   
+                        if (phase == 2'b00) sda_oe_reg <= 1'b1; 
 
-                    if (phase == 2'b11) begin
-                        if (bit_cnt == 0) begin
-                            sda_oe_reg <= 1'b0;   
-                            state <= ST_SLV_ACK1;
-                        end else 
-                            bit_cnt <= bit_cnt - 1;
+                        if (phase == 2'b11) begin
+                            if (bit_cnt == 0) begin   
+                                state <= ST_SLV_ACK1;
+                            end else 
+                                bit_cnt <= bit_cnt - 1;
+                        end
                     end
                 end
 
                 ST_SLV_ACK1: begin
-                    busy      <= 1'b1;
-                    done      <= 1'b0;
-                    sda_oe_reg <= 1'b0;
+                    if (phase_tick) begin
+                        if (phase == 2'b00) sda_oe_reg <= 1'b0; // Liberar SDA para ACK del esclavo
 
-                    if (phase == 2'b10) begin
-                        if (sda_in == 1'b0) begin // ACK recibido
-                            if (rw == 1'b0) begin
-                                dr_reg <= data_in;
-                                bit_cnt <= 3'd7;
-                                state <= ST_WR;
-                            end else begin
-                                bit_cnt <= 3'd7;
-                                state <= ST_RD;
+                        if (phase == 2'b10) ack_error <= sda_in; // Guardar ACK/NACK recibido
+
+                        if (phase == 2'b11) begin                         
+                            if (ack_error == 1'b0) begin // ACK recibido
+                                if (rw == 1'b0) begin
+                                    dr_reg <= data_in;
+                                    bit_cnt <= 3'd7;
+                                    state <= ST_WR;
+                                end else begin
+                                    bit_cnt <= 3'd7;
+                                    state <= ST_RD;
+                                end
+                            end else begin // NACK recibido
+                                sda_oe_reg <= 1'b1;
+                                state <= ST_NACK_ERROR;
                             end
-                        end else begin // NACK recibido
-                            state <= ST_NACK_ERROR;
-                        end
+                    end
                     end
                 end
 
                 ST_WR: begin
-                    busy      <= 1'b1;
-                    done      <= 1'b0;
-                    sda_oe_reg <= 1'b1;
-
-                    if (phase == 2'b11) begin
-                        if (bit_cnt == 0) begin
-                            sda_oe_reg <= 1'b0;   
-                            state <= ST_SLV_ACK2;
-                        end else 
-                            bit_cnt <= bit_cnt - 1;
-                    end
-                end
-///////////////pendiente de revisar///////////////
-                ST_SLV_ACK2: begin
-                    busy      <= 1'b1;
-                    done      <= 1'b0;
-                    sda_oe_reg <= 1'b0;
-
-                    if (phase == 2'b10) begin
-                        if (sda_in == 1'b0) begin // ACK recibido
-                            if (stop) begin
-                                state <= ST_STOP;
-                            end else if (start) begin
-                                state <= ST_START;
-                            end else begin
-                                dr_reg <= data_in;
-                                bit_cnt <= 3'd7;
-                                state <= ST_WR; // Transmisión completa
-                            end
-                        end else begin // NACK recibido
-                            state <= ST_NACK_ERROR;
+                    if (phase_tick) begin
+                        if (phase == 2'b00) sda_oe_reg <= 1'b1;
+                          // setup del bit
+                        if (phase == 2'b11) begin
+                            if (bit_cnt == 0) begin   
+                                state <= ST_SLV_ACK2;
+                            end else 
+                                bit_cnt <= bit_cnt - 1;
                         end
                     end
                 end
-///////////////pendiente de revisar///////////////
-                ST_RD: begin
-                    busy      <= 1'b1;
-                    done      <= 1'b0;
-                    sda_oe_reg <= 1'b0;
 
-                    if (phase == 2'b10) begin
-                        dr_reg[bit_cnt] <= sda_in; // Leer bit desde SDA
-                        if (bit_cnt == 0) begin
-                            data_out <= dr_reg; // Entregar dato leído
-                            state <= ST_MASTER_ACK;
-                        end else 
-                            bit_cnt <= bit_cnt - 1;
+                ST_SLV_ACK2: begin
+                    if (phase_tick) begin
+                        if (phase == 2'b00) sda_oe_reg <= 1'b0; 
+
+                        if (phase == 2'b10) ack_error <= sda_in;   
+                        
+                        if (phase == 2'b11) begin
+                            if (ack_error == 1'b0) begin 
+                                if (stop) begin
+                                    state <= ST_STOP;
+                                end else if (start) begin
+                                    bit_cnt <= 3'd7;
+                                    sda_oe_reg  <= 1'b1;
+                                    dr_reg <= {slave_address, rw}; 
+                                    state <= ST_START;
+                                end else begin
+                                    dr_reg <= data_in;
+                                    bit_cnt <= 3'd7;
+                                    state <= ST_WR; 
+                                end
+                            end else begin // NACK recibido
+                                state <= ST_NACK_ERROR;
+                            end
+                        end
+                    end
+                end
+
+                ST_RD: begin
+                    if (phase_tick) begin
+                        if (phase == 2'b00) sda_oe_reg <= 1'b0; 
+
+                        if (phase == 2'b10) dr_reg[bit_cnt] <= sda_in; 
+
+                        if (phase == 2'b11) begin
+                            if (bit_cnt == 0) begin
+                                data_out <= dr_reg; 
+                                state <= ST_MASTER_ACK;
+                            end else 
+                                bit_cnt <= bit_cnt - 1;
+                        end
+                    end
+                end
+
+                ST_MASTER_ACK: begin
+                    if (phase_tick) begin
+                        
+                        if (phase == 2'b00) sda_oe_reg <= 1'b1; 
+
+                        if (phase == 2'b11) begin
+                            
+                            if (stop) begin
+                                state <= ST_STOP;
+                            end 
+                            
+                            else if (start) begin
+                                state      <= ST_START;
+                                dr_reg     <= {slave_address, rw}; // Cargar nueva dirección
+                                bit_cnt    <= 3'd7;
+                                sda_oe_reg <= 1'b1; // Mantenemos control para generar START
+                            end 
+                            
+                            else begin
+                                state      <= ST_RD;
+                                bit_cnt    <= 3'd7;
+                                sda_oe_reg <= 1'b0; 
+                            end
+                            
+                        end
                     end
                 end
 
                 ST_NACK_ERROR: begin
-                    busy      <= 1'b1;
-                    done      <= 1'b0;
-                    ack_error <= 1'b1;
-                    sda_oe_reg <= 1'b0;
+                    if (phase_tick) begin
+                        if (phase == 2'b00) begin sda_oe_reg <= 1'b0; 
+                            ack_error <= 1'b1;
+                            sda_oe_reg <= 1'b0;
+                        end
 
-                    if (phase == 2'b11) begin
-                        state <= ST_STOP;
-                    end else if (start) begin
-                        state <= ST_START;
+                        if (phase == 2'b11) begin
+                                state <= ST_STOP;
+                        end
                     end
                 end
                 
                 ST_STOP: begin
-                    busy      <= 1'b1;
-                    done      <= 1'b0;
-                    sda_oe_reg <= 1'b1;
-
-                    // Mantengo ST_STOP hasta que termine la secuencia de STOP
-                    if (phase == 2'b11) begin
-                        busy <= 1'b0;
-                        done <= 1'b1;
-                        state <= ST_IDLE;
-                    end else
-                        state <= ST_STOP;
+                    if (phase_tick) begin
+                        if (phase == 2'b00) sda_oe_reg <= 1'b1;
+                        
+                        if (phase == 2'b11) begin
+                            busy <= 1'b0;
+                            done <= 1'b1;
+                            state <= ST_IDLE;
+                        end
+                    end
                 end
 
 
@@ -252,12 +289,10 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
 
   
     end
-
-
     
     /*
     Diagrama de tiempos I2C durante una transmisión completa.
-    ESTADO:    [ IDLE ] [     START    ]  [      BIT(1)  ] [...] [      RD    ]  [...]  [    BIT(0)     ]    [      STOP    ]
+    ESTADO:    [ IDLE ] [     START    ]  [    BIT(1)    ] [...] [      RD    ]  [...]  [    BIT(0)     ]    [      STOP    ]
     FASE:       (fijo)   00  01  10  11    00  01  10  11        00  01  10  11        00  01  10  11     00  01  10  11
 
     SCL:   ... 11111111 1111111111110000  0000111111110000  ...  0000111111110000 ...  0000111111110000   0000111111111111
@@ -321,15 +356,23 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                     scl_reg <= 1'b1; // Mantener SCL en alto en IDLE
                 end
 
-                ST_POWER_UP: begin
-                    sda_out_reg <= 1'b1; // Mantener SDA en alto en POWER_UP
-                    scl_reg <= 1'b1; // Mantener SCL en alto en POWER_UP
+                ST_MASTER_ACK: begin
+                    case (phase)
+                        2'b00: begin
+                            sda_out_reg <= start|stop; 
+                            scl_reg <= 1'b0; 
+                        end
+                        2'b01: scl_reg <= 1'b1;
+                        2'b10: scl_reg <= 1'b1;
+                        2'b11: scl_reg <= 1'b0;
+                    endcase
                 end
 
                 default: begin
                     case (phase)
                         2'b00: begin
-                            sda_out_reg <= dr_reg[bit_cnt];  // setup del bit
+                            if (sda_oe_reg)
+                                sda_out_reg <= dr_reg[bit_cnt];  // setup del bit
                             scl_reg <= 1'b0; 
                         end
                         2'b01: scl_reg <= 1'b1; 
