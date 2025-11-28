@@ -117,20 +117,16 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                         busy <= 1'b1;
                         done <= 1'b0;
                         bit_cnt <= 3'd7;
-                        sda_oe_reg  <= 1'b1;
                         dr_reg <= {slave_address, rw}; // Concatenar dirección y bit R/W
                         state <= ST_START;
                     end
                 end
 
                 ST_START: begin
+                    sda_oe_reg <= 1'b1;
                     if (phase_tick) begin
-                        if (phase == 2'b11)begin
-                            sda_oe_reg <= 1'b1; 
-                            state <= ST_ADDRRW;
-                        end
-                        else
-                            state <= ST_START;
+                        if (phase == 2'b00) sda_oe_reg <= 1'b1;
+                        if (phase == 2'b11) state <= ST_ADDRRW;
                     end
                 end
 
@@ -150,13 +146,13 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                 ST_SLV_ACK1: begin
                     if (phase_tick) begin
                         if (phase == 2'b00) sda_oe_reg <= 1'b0; // Liberar SDA para ACK del esclavo
-
                         if (phase == 2'b10) ack_error <= sda_in; // Guardar ACK/NACK recibido
+                        if (phase == 2'b11) begin  
 
-                        if (phase == 2'b11) begin                         
                             if (ack_error == 1'b0) begin // ACK recibido
                                 if (rw == 1'b0) begin
                                     dr_reg <= data_in;
+                                    sda_oe_reg <= 1'b1;
                                     bit_cnt <= 3'd7;
                                     state <= ST_WR;
                                 end else begin
@@ -164,6 +160,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                                     state <= ST_RD;
                                 end
                             end else begin // NACK recibido
+                                sda_oe_reg <= 1'b1;
                                 sda_oe_reg <= 1'b1;
                                 state <= ST_NACK_ERROR;
                             end
@@ -187,10 +184,9 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                 ST_SLV_ACK2: begin
                     if (phase_tick) begin
                         if (phase == 2'b00) sda_oe_reg <= 1'b0; 
-
                         if (phase == 2'b10) ack_error <= sda_in;   
-                        
                         if (phase == 2'b11) begin
+                            sda_oe_reg <= 1'b1;
                             if (ack_error == 1'b0) begin 
                                 if (stop) begin
                                     state <= ST_STOP;
@@ -213,11 +209,12 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
 
                 ST_RD: begin
                     if (phase_tick) begin
-                        if (phase == 2'b00) sda_oe_reg <= 1'b0; 
+                        if (phase == 2'b01) sda_oe_reg <= 1'b0; 
 
                         if (phase == 2'b10) dr_reg[bit_cnt] <= sda_in; 
 
                         if (phase == 2'b11) begin
+                            sda_oe_reg <= 1'b1;
                             if (bit_cnt == 0) begin
                                 data_out <= dr_reg; 
                                 state <= ST_MASTER_ACK;
@@ -254,12 +251,12 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                         end
                     end
                 end
-
+///////////////////PENDIENTE DE REVISAR////////////////////
                 ST_NACK_ERROR: begin
                     if (phase_tick) begin
-                        if (phase == 2'b00) begin sda_oe_reg <= 1'b0; 
+                        if (phase == 2'b00) begin 
                             ack_error <= 1'b1;
-                            sda_oe_reg <= 1'b0;
+                            //sda_oe_reg <= 1'b0;
                         end
 
                         if (phase == 2'b11) begin
@@ -267,9 +264,10 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                         end
                     end
                 end
-                
+                //////////////////PENDIENTE DE REVISAR////////////////////
                 ST_STOP: begin
                     if (phase_tick) begin
+                        sda_oe_reg <= 1'b1;
                         if (phase == 2'b00) sda_oe_reg <= 1'b1;
                         
                         if (phase == 2'b11) begin
@@ -279,7 +277,6 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                         end
                     end
                 end
-
 
                 default: begin
                     state <= ST_IDLE;
@@ -367,6 +364,12 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                         2'b11: scl_reg <= 1'b0;
                     endcase
                 end
+
+                ST_NACK_ERROR: begin
+                sda_oe_reg <= 1'b1;
+                scl_reg    <= 1'b0; // Mantener SCL bajo
+                // sda_out_reg no importa tanto, pero idealmente 0 para preparar el STOP
+            end
 
                 default: begin
                     case (phase)

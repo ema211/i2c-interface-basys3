@@ -22,7 +22,7 @@ module i2c_phase_generator #( parameter FRECUENCIA = 100_000)(
     reg [ANCHO_CUENTA-1:0] counter = 0;
 
     always @(posedge clk_input , posedge reset) begin
-        if(reset||!enable) begin
+        if(reset || !enable) begin
             counter <= 0;
             phase <= 2'b00;
             tick <= 1'b0;
