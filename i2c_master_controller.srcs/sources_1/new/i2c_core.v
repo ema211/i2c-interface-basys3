@@ -285,8 +285,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
             // 2. GESTOR DE TRANSICIONES (Ejecución en Fase 00)
             if (phase_tick && (phase == 2'b00)) begin
                 if (next_stop) begin
-                    state       <= ST_STOP;
-                    sda_out_reg <= 1'b0; 
+                    state       <= ST_STOP; 
                     sda_oe_reg  <= 1'b1; 
                     next_stop   <= 1'b0;
                 end else if (next_restart) begin
@@ -339,20 +338,20 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                     case (phase)
                         2'b00: begin 
                             scl_reg <= (is_restart) ? 1'b0 : 1'b1; 
-                            sda_out_reg <= 1'b1; sda_oe_reg <= 1'b1; 
+                            sda_out_reg <= 1'b1;  
                             end
-                        2'b01: begin sda_out_reg <= 1'b1; scl_reg <= 1'b1; sda_oe_reg <= 1'b1; end
-                        2'b10: begin sda_out_reg <= 1'b0; scl_reg <= 1'b1; sda_oe_reg <= 1'b1; end 
-                        2'b11: begin sda_out_reg <= 1'b0; scl_reg <= 1'b0; sda_oe_reg <= 1'b1; end
+                        2'b01: begin sda_out_reg <= 1'b1; scl_reg <= 1'b1; end
+                        2'b10: begin sda_out_reg <= 1'b0; scl_reg <= 1'b1; end 
+                        2'b11: begin sda_out_reg <= 1'b0; scl_reg <= 1'b0; end
                     endcase
                 end
 
                 ST_STOP: begin
                     case (phase)
-                        2'b00: begin sda_out_reg <= 1'b0; scl_reg <= 1'b0; sda_oe_reg <= 1'b1; end 
-                        2'b01: begin sda_out_reg <= 1'b0; scl_reg <= 1'b1; sda_oe_reg <= 1'b1; end 
-                        2'b10: begin sda_out_reg <= 1'b1; scl_reg <= 1'b1; sda_oe_reg <= 1'b1; end 
-                        2'b11: begin sda_out_reg <= 1'b1; scl_reg <= 1'b1; sda_oe_reg <= 1'b1; end
+                        2'b00: begin sda_out_reg <= 1'b0; scl_reg <= 1'b0; end 
+                        2'b01: begin sda_out_reg <= 1'b0; scl_reg <= 1'b1; end 
+                        2'b10: begin sda_out_reg <= 1'b1; scl_reg <= 1'b1; end 
+                        2'b11: begin sda_out_reg <= 1'b1; scl_reg <= 1'b1; end
                     endcase
                 end
 
@@ -362,7 +361,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
 
                 ST_MASTER_ACK: begin
                     case (phase)
-                        2'b00: begin sda_out_reg <= start|stop; scl_reg <= 1'b0; sda_oe_reg <= 1'b1; end
+                        2'b00: begin sda_out_reg <= start|stop; scl_reg <= 1'b0; end
                         2'b01: scl_reg <= 1'b1;
                         2'b10: scl_reg <= 1'b1;
                         2'b11: scl_reg <= 1'b0;
@@ -371,7 +370,6 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
 
                 ST_NACK_ERROR: begin
                     scl_reg    <= 1'b0; 
-                    sda_oe_reg <= 1'b1;
                 end
 
                 default: begin
