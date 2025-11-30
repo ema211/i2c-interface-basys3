@@ -3,6 +3,7 @@ i2c_master_controller.cache/
 i2c_master_controller.hw/
 i2c_master_controller.ip_user_files/
 i2c_master_controller.sim/
+i2c_master_controller.runs/
 
 # IGNORAR archivo de proyecto de Vivado
 i2c_master_controller.xpr
