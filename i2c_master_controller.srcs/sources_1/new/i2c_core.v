@@ -1,7 +1,11 @@
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
+// Company: ITESO
+// Engineer: Emanuel Aldana
+// Create Date: 25.11.2025 16:10:06
 // Module Name: i2c_core 
-// Description: Controlador I2C Master (FSM Flags + PHY Glitch-Free Final)
+// Description: 
+// Additional Comments:
 //////////////////////////////////////////////////////////////////////////////////
 
 module i2c_core#(parameter integer F_SCL = 100_000)(
@@ -259,7 +263,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                             sda_oe_reg <= 1'b1;
                         end
                         if (phase == 2'b11) begin
-                            state <= ST_STOP;
+                            next_stop <= 1'b1;
                         end
                     end
                 end
