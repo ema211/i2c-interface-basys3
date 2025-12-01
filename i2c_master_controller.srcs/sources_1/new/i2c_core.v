@@ -55,7 +55,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
 
     Phase_Tick:      _________________Λ__________________________Λ__________________
                     (Solo 1 ciclo)   ^                          ^
-                                     |                          |
+                                    |                          |
                             "¡Cambié a 01!"             "¡Cambié a 10!"
     */
     wire [1:0]  phase;        
@@ -106,6 +106,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
             dr_reg      <= 0;
             is_restart  <= 1'b0;
             prev_state  <= ST_IDLE;
+            next_state  <= ST_IDLE;   // ← AÑADE ESTA LÍNEA
             op_done     <= 1'b0;
             
 
@@ -205,7 +206,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                     //Control de inicio
                     sda_oe_reg <= 1'b0;
 
-                    if (phase == 2'b10) ack_error <= sda_in;   
+                    if (phase == 2'b10 && phase_tick) ack_error <= sda_in;   
                     
                     //Control de salida
                     if (phase == 2'b11 && phase_tick_end) begin
@@ -253,11 +254,11 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
 
                     //Control de salida
                     if (phase == 2'b11 && phase_tick_end) begin
-                        next_state <= ST_STOP;
-                        state <= ST_WAIT;
+                        next_state <= ST_STOP;  // después del error vamos a STOP
+                        state      <= ST_WAIT;  // pero primero pasamos por WAIT bloqueante
+                        op_done    <= 1'b1;     // avisamos al CPU que hubo evento (con error)
                     end
                 end
-            
                 ST_STOP: begin
                     //Control de inicio
                     sda_oe_reg <= 1'b1;
@@ -388,6 +389,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                 end
 
                 ST_WAIT: begin
+                    sda_out_reg <= 1'b0;
                     scl_reg <= 1'b0;                    
                 end
 

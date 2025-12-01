@@ -74,9 +74,6 @@ module i2c_core_tb;
         wait(op_done == 1);
         #100;
 
-        //Tiempo donde el CPU configura nuevos registros y al mismo tie
-        slave_address = 7'h55; // Cambiamos la dirección del esclavo
-
         // CPU ya leyó op_done y lo limpia con wait_flag
         wait_flag = 1'b1;
         #20;
@@ -97,8 +94,14 @@ module i2c_core_tb;
         wait(op_done == 1);
         #100;
 
-        //4. Tiempo donde el CPU configura nuevos registros
-        
+        //4. Tiempo donde el CPU toma decisiones
+        //si llegara un no ack, el CPU podría decidir reintentar o abortar
+        //como el proceso fue ok, seguimos con la escritura
+        start = 0;
+        stop  = 0;
+        rw    = 0;
+        //tambien aprovecha este tiempo para preparar el siguiente dato a enviar
+        data_in = 8'hCB;
 
         // 5. Simular que la CPU ya leyó op_done y lo limpia con wait_flag
         wait_flag = 1'b1;
@@ -121,7 +124,11 @@ module i2c_core_tb;
         #100;
 
         //4. Tiempo donde el CPU configura nuevos registros
+        //si llegara un no ack, el CPU podría decidir reintentar o abortar
+        //como el proceso fue ok, seguimos 
         // En lugar de STOP, mandamos START de nuevo para lectura
+        start = 1; 
+        stop  = 0;
 
         
         // 5. Simular que la CPU ya leyó op_done y lo limpia con wait_flag
@@ -132,8 +139,17 @@ module i2c_core_tb;
         #20000;
         start = 0;
 
+        //Como se eligio START repetido, el core automáticamente hará un RESTART
+        //se espera de nuevo la señal op_done
+
         wait(op_done == 1);
         #100;
+
+        //De nuevo, tiempo donde el CPU configura nuevos registros
+        //si se necesitara cambiar de dirección o modo, se haría aquí
+        slave_address = 7'h23; // Dirección del esclavo BH1750
+        rw    = 1; // Read
+
         wait_flag = 1'b1;
         #20;
         wait_flag = 1'b0;
@@ -143,8 +159,7 @@ module i2c_core_tb;
         // D. Dirección (Read)
         //1. Mandar direccion al bus
         repeat(8) @(posedge scl);
-        //4. Tiempo donde el CPU configura nuevos registros
-        rw    = 1; // CAMBIO A LECTUR
+
         //2. Esclavo escribe ack
         @(negedge scl); #2500;
         ack_force = 0; // ACK del Esclavo
@@ -156,7 +171,12 @@ module i2c_core_tb;
         wait(op_done == 1);
         #100;
 
-
+        //Tiempo donde el CPU toma decisiones
+        //si llegara un no ack, el CPU podría decidir reintentar o abortar
+        //como el proceso fue ok, seguimos con la escritura
+        start = 0;
+        stop  = 0;
+        rw    = 0;
 
         // 5. Simular que la CPU ya leyó op_done y lo limpia con wait_flag
         wait_flag = 1'b1;
@@ -205,8 +225,6 @@ module i2c_core_tb;
 
         //2. Tiempo donde el CPU decide a partir del dato recibido
         // El Master debe mandar NACK (1) en el último byte de lectura.
-        
-
         if (data_out == 8'h33) 
             $display("LECTURA CORRECTA! Dato: %h", data_out);
         else 

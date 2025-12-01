@@ -11,18 +11,18 @@
       </db_ref>
    </db_ref_list>
    <zoom_setting>
-      <ZoomStartTime time="105.102270 us"></ZoomStartTime>
-      <ZoomEndTime time="439.902271 us"></ZoomEndTime>
-      <Cursor1Time time="310.515000 us"></Cursor1Time>
+      <ZoomStartTime time="0.000000 us"></ZoomStartTime>
+      <ZoomEndTime time="327.600001 us"></ZoomEndTime>
+      <Cursor1Time time="18.200000 us"></Cursor1Time>
    </zoom_setting>
    <column_width_setting>
-      <NameColumnWidth column_width="122"></NameColumnWidth>
-      <ValueColumnWidth column_width="72"></ValueColumnWidth>
+      <NameColumnWidth column_width="145"></NameColumnWidth>
+      <ValueColumnWidth column_width="85"></ValueColumnWidth>
    </column_width_setting>
-   <WVObjectSize size="26" />
+   <WVObjectSize size="28" />
    <wave_markers>
-      <marker time="290022788" label="" />
       <marker time="210200000" label="" />
+      <marker time="290022788" label="" />
       <marker time="110216220" label="" />
    </wave_markers>
    <wvobject fp_name="/i2c_core_tb/clk" type="logic">
@@ -39,43 +39,55 @@
    <wvobject fp_name="/i2c_core_tb/sda_drive_data" type="logic">
       <obj_property name="ElementShortName">sda_drive_data</obj_property>
       <obj_property name="ObjectShortName">sda_drive_data</obj_property>
-      <obj_property name="CustomSignalColor">#FFFF00</obj_property>
+      <obj_property name="CustomSignalColor">#FFD700</obj_property>
       <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject fp_name="/i2c_core_tb/data_in" type="array">
       <obj_property name="ElementShortName">data_in[7:0]</obj_property>
       <obj_property name="ObjectShortName">data_in[7:0]</obj_property>
-      <obj_property name="CustomSignalColor">#FFFF00</obj_property>
+      <obj_property name="CustomSignalColor">#FF00FF</obj_property>
       <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject fp_name="/i2c_core_tb/slave_address" type="array">
       <obj_property name="ElementShortName">slave_address[6:0]</obj_property>
       <obj_property name="ObjectShortName">slave_address[6:0]</obj_property>
-      <obj_property name="CustomSignalColor">#FFFF00</obj_property>
+      <obj_property name="CustomSignalColor">#FFD700</obj_property>
       <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject fp_name="/i2c_core_tb/reset" type="logic">
       <obj_property name="ElementShortName">reset</obj_property>
       <obj_property name="ObjectShortName">reset</obj_property>
-      <obj_property name="CustomSignalColor">#FFFFFF</obj_property>
+      <obj_property name="CustomSignalColor">#FF00FF</obj_property>
       <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject fp_name="/i2c_core_tb/start" type="logic">
       <obj_property name="ElementShortName">start</obj_property>
       <obj_property name="ObjectShortName">start</obj_property>
-      <obj_property name="CustomSignalColor">#FFFFFF</obj_property>
+      <obj_property name="CustomSignalColor">#FFD700</obj_property>
+      <obj_property name="UseCustomSignalColor">true</obj_property>
+   </wvobject>
+   <wvobject fp_name="/i2c_core_tb/reset" type="logic">
+      <obj_property name="ElementShortName">reset</obj_property>
+      <obj_property name="ObjectShortName">reset</obj_property>
+      <obj_property name="CustomSignalColor">#FF00FF</obj_property>
       <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject fp_name="/i2c_core_tb/stop" type="logic">
       <obj_property name="ElementShortName">stop</obj_property>
       <obj_property name="ObjectShortName">stop</obj_property>
-      <obj_property name="CustomSignalColor">#FFFFFF</obj_property>
+      <obj_property name="CustomSignalColor">#FFD700</obj_property>
+      <obj_property name="UseCustomSignalColor">true</obj_property>
+   </wvobject>
+   <wvobject fp_name="/i2c_core_tb/stop" type="logic">
+      <obj_property name="ElementShortName">stop</obj_property>
+      <obj_property name="ObjectShortName">stop</obj_property>
+      <obj_property name="CustomSignalColor">#FF00FF</obj_property>
       <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject fp_name="/i2c_core_tb/rw" type="logic">
       <obj_property name="ElementShortName">rw</obj_property>
       <obj_property name="ObjectShortName">rw</obj_property>
-      <obj_property name="CustomSignalColor">#FFFFFF</obj_property>
+      <obj_property name="CustomSignalColor">#FFD700</obj_property>
       <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject type="divider" fp_name="divider175">
@@ -83,27 +95,23 @@
       <obj_property name="DisplayName">label</obj_property>
       <obj_property name="BkColor">#008080</obj_property>
    </wvobject>
-   <wvobject fp_name="/i2c_core_tb/busy" type="logic">
-      <obj_property name="ElementShortName">busy</obj_property>
-      <obj_property name="ObjectShortName">busy</obj_property>
-      <obj_property name="CustomSignalColor">#FF00FF</obj_property>
-      <obj_property name="UseCustomSignalColor">true</obj_property>
-   </wvobject>
    <wvobject fp_name="/i2c_core_tb/done" type="logic">
       <obj_property name="ElementShortName">done</obj_property>
       <obj_property name="ObjectShortName">done</obj_property>
-      <obj_property name="CustomSignalColor">#FF00FF</obj_property>
+      <obj_property name="CustomSignalColor">#00FF7F</obj_property>
       <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject fp_name="/i2c_core_tb/ack_error" type="logic">
       <obj_property name="ElementShortName">ack_error</obj_property>
       <obj_property name="ObjectShortName">ack_error</obj_property>
-      <obj_property name="CustomSignalColor">#FF00FF</obj_property>
+      <obj_property name="CustomSignalColor">#00FF7F</obj_property>
       <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject fp_name="/i2c_core_tb/data_out" type="array">
       <obj_property name="ElementShortName">data_out[7:0]</obj_property>
       <obj_property name="ObjectShortName">data_out[7:0]</obj_property>
+      <obj_property name="CustomSignalColor">#00FF7F</obj_property>
+      <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject type="divider" fp_name="divider176">
       <obj_property name="label">DebugSignals</obj_property>
@@ -113,40 +121,58 @@
    <wvobject fp_name="/i2c_core_tb/data_to_send" type="array">
       <obj_property name="ElementShortName">data_to_send[7:0]</obj_property>
       <obj_property name="ObjectShortName">data_to_send[7:0]</obj_property>
-      <obj_property name="CustomSignalColor">#FFD700</obj_property>
+      <obj_property name="CustomSignalColor">#FF00FF</obj_property>
       <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject fp_name="/i2c_core_tb/ack_force" type="logic">
       <obj_property name="ElementShortName">ack_force</obj_property>
       <obj_property name="ObjectShortName">ack_force</obj_property>
-      <obj_property name="CustomSignalColor">#FFD700</obj_property>
+      <obj_property name="CustomSignalColor">#FFFF00</obj_property>
       <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject fp_name="/i2c_core_tb/wait_flag" type="logic">
       <obj_property name="ElementShortName">wait_flag</obj_property>
       <obj_property name="ObjectShortName">wait_flag</obj_property>
+      <obj_property name="CustomSignalColor">#FF00FF</obj_property>
+      <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject fp_name="/i2c_core_tb/uut/sda_oe_reg" type="logic">
       <obj_property name="ElementShortName">sda_oe_reg</obj_property>
       <obj_property name="ObjectShortName">sda_oe_reg</obj_property>
+      <obj_property name="CustomSignalColor">#FFFF00</obj_property>
+      <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject fp_name="/i2c_core_tb/op_done" type="logic">
       <obj_property name="ElementShortName">op_done</obj_property>
       <obj_property name="ObjectShortName">op_done</obj_property>
+      <obj_property name="CustomSignalColor">#FF00FF</obj_property>
+      <obj_property name="UseCustomSignalColor">true</obj_property>
+   </wvobject>
+   <wvobject fp_name="/i2c_core_tb/uut/prev_state" type="array">
+      <obj_property name="ElementShortName">prev_state[3:0]</obj_property>
+      <obj_property name="ObjectShortName">prev_state[3:0]</obj_property>
+      <obj_property name="CustomSignalColor">#FFFF00</obj_property>
+      <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject fp_name="/i2c_core_tb/uut/phase" type="array">
       <obj_property name="ElementShortName">phase[1:0]</obj_property>
       <obj_property name="ObjectShortName">phase[1:0]</obj_property>
       <obj_property name="Radix">HEXRADIX</obj_property>
+      <obj_property name="CustomSignalColor">#FF00FF</obj_property>
+      <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject fp_name="/i2c_core_tb/uut/next_state" type="array">
       <obj_property name="ElementShortName">next_state[3:0]</obj_property>
       <obj_property name="ObjectShortName">next_state[3:0]</obj_property>
+      <obj_property name="CustomSignalColor">#FFFF00</obj_property>
+      <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject fp_name="/i2c_core_tb/uut/state" type="array">
       <obj_property name="ElementShortName">state[3:0]</obj_property>
       <obj_property name="ObjectShortName">state[3:0]</obj_property>
       <obj_property name="Radix">HEXRADIX</obj_property>
+      <obj_property name="CustomSignalColor">#FF00FF</obj_property>
+      <obj_property name="UseCustomSignalColor">true</obj_property>
    </wvobject>
    <wvobject type="divider" fp_name="divider173">
       <obj_property name="label">Pines fisicos</obj_property>
