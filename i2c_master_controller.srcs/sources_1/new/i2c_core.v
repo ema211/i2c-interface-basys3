@@ -23,11 +23,13 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
     input  wire        rw,           // 0 = write, 1 = read
     input  wire [7:0]  data_in,      // byte a enviar
     input  wire [6:0]  slave_address,// dirección del esclavo (SLA)
+    input wire         wait_flag,
 
     // Salidas de estado
     output reg         busy,
     output reg         done,
     output reg         ack_error,
+    output reg         op_done,
     output reg [7:0]   data_out
     );
 
@@ -64,7 +66,8 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
         .clk_input(clk_system),
         .enable   (busy),
         .tick     (phase_tick),
-        .phase    (phase)
+        .phase    (phase),
+        .tick_end (phase_tick_end)
     );
 
     localparam [3:0]
@@ -77,16 +80,13 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
         ST_RD         = 4'd6,
         ST_MASTER_ACK = 4'd7,
         ST_NACK_ERROR = 4'd8,
-        ST_STOP       = 4'd9;
+        ST_STOP       = 4'd9,
+        ST_WAIT       = 4'd10;
 
     reg [3:0] state;
+    reg [3:0] next_state;
     
     // Banderas de Transición
-    reg       next_write;
-    reg       next_read;
-    reg       next_restart;
-    reg       next_stop;
-    reg       next_nack;
     reg       is_restart; 
 
     // -------------------------------------------------------------------------
@@ -105,11 +105,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
             dr_reg      <= 0;
             is_restart  <= 1'b0;
 
-            next_write   <= 1'b0;
-            next_read    <= 1'b0;
-            next_restart <= 1'b0;
-            next_stop    <= 1'b0;
-            next_nack    <= 1'b0;
+
         end
         else begin
             // 1. LÓGICA DE ESTADOS
@@ -122,12 +118,8 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                     data_out  <= 0;
                     bit_cnt   <= 3'd0;
                     sda_oe_reg <= 1'b0;
+                    op_done   <= 1'b0;
 
-                    next_write   <= 1'b0;
-                    next_read    <= 1'b0;
-                    next_restart <= 1'b0;
-                    next_stop    <= 1'b0;
-                    next_nack    <= 1'b0;
                     is_restart <= 1'b0;
                     
                     if (start) begin
@@ -140,177 +132,175 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                 end
 
                 ST_START: begin
+                    //Control de inicio
                     sda_oe_reg <= 1'b1;
-                    if (phase_tick) begin
-                        if (phase == 2'b00) sda_oe_reg <= 1'b1;
-                        if (phase == 2'b11) state <= ST_ADDRRW;
+
+                    //Control de salida
+                    if (phase == 2'b11 && phase_tick_end) begin 
+                        next_state <= ST_ADDRRW;
+                        state <= ST_WAIT;
+                        is_restart <= 1'b0;
+                        op_done <= 1'b1;
                     end
                 end
 
                 ST_ADDRRW: begin
-                    if (phase_tick) begin   
-                        if (phase == 2'b00) sda_oe_reg <= 1'b1; 
+                    //Control de inicio
+                    sda_oe_reg <= 1'b1; 
 
-                        if (phase == 2'b11) begin
-                            if (bit_cnt == 0) begin   
-                                state <= ST_SLV_ACK1;
-                            end else 
-                                bit_cnt <= bit_cnt - 1;
-                        end
+                    //Control de salida
+                    if (phase == 2'b11 && phase_tick_end) begin
+                        if (bit_cnt == 0) begin   
+                            state <= ST_SLV_ACK1;
+                        end else 
+                            bit_cnt <= bit_cnt - 1;
                     end
                 end
 
                 ST_SLV_ACK1: begin
-                    if (phase_tick) begin
-                        sda_oe_reg <= 1'b0; 
-                        if (phase == 2'b00) sda_oe_reg <= 1'b0; 
-                        if (phase == 2'b10) ack_error <= sda_in; 
+                    //Control de inicio
+                    sda_oe_reg <= 1'b0; 
+                    if (phase == 2'b00 && phase_tick) ack_error <= 1'b0;
+                        
+                    //Lectura de ACK justo a la mitad de scl positivo
+                    if (phase == 2'b10 && phase_tick) ack_error <= sda_in; 
 
-                        if (phase == 2'b11) begin  
-                            if (ack_error == 1'b0) begin 
-                                if (rw == 1'b0) begin
-                                    dr_reg     <= data_in;
-                                    bit_cnt    <= 3'd7;
-                                    next_write <= 1'b1; 
-                                end else begin
-                                    bit_cnt    <= 3'd7;
-                                    next_read  <= 1'b1; 
-                                end
-                            end else begin 
-                                next_nack <= 1'b1;
+                    //Control de salida
+                    if (phase == 2'b11 && phase_tick_end) begin  
+                        if (ack_error == 1'b0) begin 
+                            if (rw == 1'b0) begin
+                                dr_reg     <= data_in;
+                                bit_cnt    <= 3'd7;
+                                next_state      <= ST_WR; 
+                            end else begin
+                                bit_cnt    <= 3'd7;
+                                next_state      <= ST_RD; 
                             end
+                        end else begin 
+
+                            ack_error  <= 1'b1;
+                            next_state <= ST_STOP;
                         end
+                        state <= ST_WAIT;
+                        op_done <= 1'b1;
                     end
                 end
 
                 ST_WR: begin
-                    if (phase_tick) begin
-                        if (phase == 2'b00) sda_oe_reg <= 1'b1;
+                    sda_oe_reg <= 1'b1;
                         
-                        if (phase == 2'b11) begin
-                            if (bit_cnt == 0) begin   
-                                state <= ST_SLV_ACK2;
-                            end else 
-                                bit_cnt <= bit_cnt - 1;
-                        end
+                    if (phase == 2'b11 && phase_tick_end) begin
+                        if (bit_cnt == 0) begin   
+                            state <= ST_SLV_ACK2;
+                        end else 
+                            bit_cnt <= bit_cnt - 1;
                     end
                 end
 
                 ST_SLV_ACK2: begin
-                    if (phase_tick) begin
-                        if (phase == 2'b00) sda_oe_reg <= 1'b0; 
-                        if (phase == 2'b10) ack_error <= sda_in;   
-                        
-                        if (phase == 2'b11) begin
-                            if (ack_error == 1'b0) begin 
-                                if (stop) begin
-                                    next_stop <= 1'b1;
-                                end else if (start) begin
-                                    bit_cnt      <= 3'd7;
-                                    dr_reg       <= {slave_address, rw}; 
-                                    next_restart <= 1'b1;
-                                end else begin
-                                    dr_reg     <= data_in;
-                                    bit_cnt    <= 3'd7;
-                                    next_write <= 1'b1;
-                                end
-                            end else begin 
-                                next_nack <= 1'b1;
+                    //Control de inicio
+                    sda_oe_reg <= 1'b0;
+
+                    if (phase == 2'b10) ack_error <= sda_in;   
+                    
+                    //Control de salida
+                    if (phase == 2'b11 && phase_tick_end) begin
+                        if (ack_error == 1'b0) begin 
+                            if (stop) begin
+                                next_state     <= ST_STOP;
+                            end else if (start) begin
+                                bit_cnt      <= 3'd7;
+                                dr_reg       <= {slave_address, rw}; 
+                                is_restart   <= 1'b1;
+                                next_state        <= ST_START;
+                            end else begin
+                                dr_reg     <= data_in;
+                                bit_cnt    <= 3'd7;
+                                next_state      <= ST_WR;
                             end
+                        end else begin 
+                            ack_error  <= 1'b1;
+                            next_state <= ST_STOP;
                         end
+                        state <= ST_WAIT;
+                        op_done <= 1'b1;
                     end
                 end
 
                 ST_RD: begin
-                    if (phase_tick) begin
-                        if (phase == 2'b00) sda_oe_reg <= 1'b0; 
+                    //Control de inicio
+                    sda_oe_reg <= 1'b0; 
 
-                        if (phase == 2'b10) dr_reg[bit_cnt] <= sda_in; 
+                    if (phase == 2'b10 && phase_tick) dr_reg[bit_cnt] <= sda_in; 
 
-                        if (phase == 2'b11) begin
-                            if (bit_cnt == 0) begin
-                                data_out <= dr_reg; 
-                                state    <= ST_MASTER_ACK;
-                            end else 
-                                bit_cnt <= bit_cnt - 1;
-                        end
-                    end
+                    //Control de salida
+                    if (phase == 2'b11 && phase_tick_end) begin
+                        if (bit_cnt == 0) begin
+                            data_out <= dr_reg; 
+                            next_state    <= ST_MASTER_ACK;
+                        end else 
+                            bit_cnt <= bit_cnt - 1;
+                        state <= ST_WAIT;
+                        op_done <= 1'b1;
+                    end   
                 end
 
                 ST_MASTER_ACK: begin
-                    if (phase_tick) begin
-                        if (phase == 2'b00) sda_oe_reg <= 1'b1; 
-
-                        if (phase == 2'b11) begin
-                            if (stop) begin
-                                next_stop <= 1'b1;
-                            end else if (start) begin
-                                dr_reg       <= {slave_address, rw}; 
-                                bit_cnt      <= 3'd7;
-                                next_restart <= 1'b1;
-                            end else begin
-                                bit_cnt   <= 3'd7;
-                                next_read <= 1'b1;
-                            end
+                    //Control de inicio
+                    sda_oe_reg <= 1'b1; 
+        
+                    //Control de salida
+                    if (phase == 2'b11 && phase_tick_end) begin
+                        if (stop) begin
+                            state     <= ST_STOP;
+                        end else if (start) begin
+                            dr_reg       <= {slave_address, rw}; 
+                            bit_cnt      <= 3'd7;
+                            is_restart   <= 1'b1;
+                            state        <= ST_START;
+                        end else begin
+                            bit_cnt   <= 3'd7;
+                            state     <= ST_RD;
                         end
                     end
                 end
 
                 ST_NACK_ERROR: begin
-                    if (phase_tick) begin
-                        if (phase == 2'b00) begin 
-                            ack_error  <= 1'b1;
-                            sda_oe_reg <= 1'b1;
-                        end
-                        if (phase == 2'b11) begin
-                            next_stop <= 1'b1;
-                        end
+                    //Control de inicio
+                    sda_oe_reg <= 1'b1;
+                    ack_error  <= 1'b1;
+
+                    //Control de salida
+                    if (phase == 2'b11 && phase_tick_end) begin
+                        next_state <= ST_STOP;
+                        state <= ST_WAIT;
                     end
                 end
-               
+            
                 ST_STOP: begin
-                    if (phase_tick) begin
-                        sda_oe_reg <= 1'b1;
-                        if (phase == 2'b00) sda_oe_reg <= 1'b1;
-                        
-                        if (phase == 2'b11) begin
-                            busy  <= 1'b0;
-                            done  <= 1'b1;
-                            state <= ST_IDLE;
-                        end
+                    //Control de inicio
+                    sda_oe_reg <= 1'b1;
+
+                    //Control de salida
+                    if (phase == 2'b11 && phase_tick_end) begin
+                        busy  <= 1'b0;
+                        done  <= 1'b1;
+                        state <= ST_IDLE;
                     end
+                end
+////////////////CAMBIO REALIZADO, PRUEBA////////////////
+                ST_WAIT: begin
+                    //sda_oe_reg <= 1'b1;
+                    if (wait_flag) op_done <= 1'b0;
+
+                    if (phase == 2'b11 && phase_tick_end && op_done == 0) 
+                        state <= next_state;
                 end
 
                 default: begin
                     state <= ST_IDLE;
                 end
             endcase
-
-            // 2. GESTOR DE TRANSICIONES (Ejecución en Fase 00)
-            if (phase_tick && (phase == 2'b00)) begin
-                if (next_stop) begin
-                    state       <= ST_STOP; 
-                    sda_oe_reg  <= 1'b1; 
-                    next_stop   <= 1'b0;
-                end else if (next_restart) begin
-                    state        <= ST_START;
-                    sda_oe_reg   <= 1'b1;
-                    next_restart <= 1'b0;
-                    is_restart   <= 1'b1;
-                end else if (next_write) begin
-                    state      <= ST_WR;
-                    sda_oe_reg <= 1'b1;
-                    next_write <= 1'b0;
-                end else if (next_nack) begin
-                    state      <= ST_NACK_ERROR;
-                    sda_oe_reg <= 1'b1;
-                    next_nack  <= 1'b0;
-                end else if (next_read) begin
-                    state      <= ST_RD;
-                    sda_oe_reg <= 1'b0; 
-                    next_read  <= 1'b0;
-                end
-            end
 
         end
     end
@@ -324,7 +314,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
     SCL:   ... 11111111 1111111111110000  0000111111110000  ...  0000111111110000 ...  0000111111110000   0000111111111111
                         |   |   |   |  |   |   |   |             |   |   |   |         |   |   |   |      |   |   |   |
     SDA:   ... 11111111 1111111100000000  1111111111111111  ...  zzzzzzzzzzzzzzzz  ... 0000000000000000   0000000011111111
-                               ^          ^       ^              ^       ^             ^       ^          ^       ^
+                            ^          ^       ^              ^       ^             ^       ^          ^       ^
     Eventos:                 START      Setup   Hold          Setup    Hold         Setup     STOP        Setup     STOP
     */
 
@@ -374,6 +364,10 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
 
                 ST_NACK_ERROR: begin
                     scl_reg    <= 1'b0; 
+                end
+
+                ST_WAIT: begin
+                    scl_reg <= 1'b0;                    
                 end
 
                 default: begin

@@ -2,15 +2,16 @@
 
 module i2c_core_tb;
 
-    reg clk = 0;
+    reg clk   = 0;
     reg reset = 1;
     
     // Entradas del Core
     reg start = 0;
-    reg stop = 0;
-    reg rw = 0;       // 0=Write, 1=Read
-    reg [7:0] data_in = 8'hCB; // Dato a escribir (11001011)
-    reg [7:0] slave_address = 8'h55; // Dirección del esclavo (1010101)
+    reg stop  = 0;
+    reg rw    = 0;              // 0=Write, 1=Read
+    reg [7:0] data_in = 8'hCB;  // Dato a escribir (11001011)
+    reg [6:0] slave_address = 7'h55; // Dirección del esclavo (1010101)
+    reg       wait_flag = 0;    // ← ENTRADA al core, la maneja el TB
 
     // Salidas del Core
     wire scl;
@@ -18,99 +19,155 @@ module i2c_core_tb;
     wire done;
     wire ack_error;
     wire [7:0] data_out;
+    wire op_done;               // ← SALIDA del core, por eso es wire
 
-    // Bus SDA
+    // Bus SDA (open-drain con pull-up débil)
     tri1 sda;
     
     // Control del Testbench (Esclavo Simulado)
-    reg ack_force = 1;      // Para mandar ACKs (0=ACK, 1=Nada)
-    reg [7:0] data_to_send = 8'h33; // Dato que el "sensor" va a mandar (00110011)
-    reg sda_drive_data = 1; // Para mandar bits de datos (0=Low, 1=HighZ)
+    reg ack_force     = 1;      // 0=ACK, 1=No conduce
+    reg [7:0] data_to_send = 8'h33; // Dato que el "sensor" va a mandar
+    reg sda_drive_data = 1;     // 0=Forzar 0, 1=Z
 
     // Lógica del Bus:
-    // El Testbench puede jalar a tierra por dos razones:
-    // 1. Para mandar un ACK (ack_force=0)
-    // 2. Para mandar un bit '0' de datos (sda_drive_data=0)
     assign sda = ((ack_force == 0) || (sda_drive_data == 0)) ? 1'b0 : 1'bz;
 
     // Instancia del Core
     i2c_core #(.F_SCL(100_000)) uut (
-        .reset(reset), 
-        .clk_system(clk), 
-        .sda(sda), 
-        .scl(scl), 
-        .start(start), 
-        .stop(stop), 
-        .rw(rw),
-        .data_in(data_in), 
-        .slave_address(slave_address),
-        .busy(busy),
-        .done(done),
-        .ack_error(ack_error),
-        .data_out(data_out)
+        .reset         (reset), 
+        .clk_system    (clk), 
+        .sda           (sda), 
+        .scl           (scl), 
+        .start         (start), 
+        .stop          (stop), 
+        .rw            (rw),
+        .data_in       (data_in), 
+        .slave_address (slave_address),
+        .wait_flag     (wait_flag),   // ← ahora sí conectado
+        .busy          (busy),
+        .done          (done),
+        .ack_error     (ack_error),
+        .op_done       (op_done),
+        .data_out      (data_out)
     );
 
+    // Reloj 100 MHz
     always #5 clk = ~clk; 
 
     // --- SECUENCIA MAESTRA ---
     initial begin
-        // 1. INICIALIZAR
-        #100; reset = 0; 
+        // INICIALIZAR
+        #100; 
+        reset = 0; 
         #100;
 
         // -----------------------------------------------------------
         // FASE 1: ESCRITURA (Address + Register)
         // -----------------------------------------------------------
+
+        ////////A. Generar START y reinicio de bandera////////
         start = 1; 
-        rw = 0; // Write
-        #20; start = 0;
+        rw    = 0; // Write
+        #20; 
+        start = 0;
 
-        // A. Dirección (Write)
-        repeat(8) @(posedge scl); // Esperar 8 bits
-        @(negedge scl); #2500;
-        ack_force = 0; // ACK del Esclavo
-        @(negedge scl); #2500;
-        ack_force = 1; // Soltar    
 
-        // B. Dato (Registro a leer, ej 0xCB)
+        // Esperar a que el core marque op_done (operación completada)
+        wait(op_done == 1);
+        #100;
+
+        // Esperar a que el core marque op_done (operación completada)
+        wait_flag = 1'b1;
+        #20;
+        wait_flag = 1'b0;
+
+        //////// B. Dirección (Write)////////
+        //1. Mandar direccion al bus
+        repeat(8) @(posedge scl);         // Esperar 8 flancos de SCL (SLA+W)
+
+        //2. Esclavo escribe ack
+        @(negedge scl); #2500;
+        ack_force = 0;                    // ACK del Esclavo
+        @(negedge scl); #2500;
+        ack_force = 1;                    // Soltar 
+        #200;
+
+        //3. Esperar a que el core marque op_done (operación completada)
+        wait(op_done == 1);
+        #100;
+
+        //4. Tiempo donde el CPU configura nuevos registros
+        
+
+        // 5. Simular que la CPU ya leyó op_done y lo limpia con wait_flag
+        wait_flag = 1'b1;
+        #20;
+        wait_flag = 1'b0;
+
+        //////// C. Dato (Registro a escribir, ej 0xCB)////////
+        //1. Mandar direccion al bus
         repeat(8) @(posedge scl);
+
+        //2. Esclavo escribe ack
         @(negedge scl); #2500;
         ack_force = 0; // ACK del Esclavo
-        
-        // En lugar de STOP, mandamos START de nuevo.
-        start = 1; 
-        rw = 1; // ¡CAMBIO A LECTURA!
-        
         @(negedge scl); #2500;
         ack_force = 1; // Soltar ACK
-        #20; start = 0; // Quitar pulso de start
+        #200;
+        
+        //3. Esperar a que el core marque op_done (operación completada)
+        wait(op_done == 1);
+        #100;
+
+        //4. Tiempo donde el CPU configura nuevos registros
+        // En lugar de STOP, mandamos START de nuevo para lectura
+        start = 1; 
+        #200;
+        start = 0;
+        
+        // 5. Simular que la CPU ya leyó op_done y lo limpia con wait_flag
+        wait_flag = 1'b1;
+        #20;
+        wait_flag = 1'b0;
 
         // -----------------------------------------------------------
         // FASE 2: LECTURA (Address + Read Byte)
         // -----------------------------------------------------------
-        
-        // C. Dirección (Read)
-        // El core manda la dirección otra vez (0x55) pero con RW=1
-        repeat(9) @(posedge scl);
+        // D. Dirección (Read)
+        //1. Mandar direccion al bus
+        repeat(8) @(posedge scl);
+
+        //2. Esclavo escribe ack
         @(negedge scl); #2500;
         ack_force = 0; // ACK del Esclavo
         @(negedge scl); #2500;
-        ack_force = 1; // Soltar
+        ack_force = 1; // Soltar ACK
+        #200;                   // Soltar
 
-        // D. SIMULAR ENVÍO DE DATOS DEL ESCLAVO (0x33)
-        // Aquí el Testbench tiene que escribir en SDA bit a bit
-        // Data: 0x33 = 0011 0011
+        //3. Esperar a que el core marque op_done (operación completada)
+        wait(op_done == 1);
+        #100;
+
+        //4. Tiempo donde el CPU configura nuevos registros
+        rw    = 1; // CAMBIO A LECTUR
+
+        // 5. Simular que la CPU ya leyó op_done y lo limpia con wait_flag
+        wait_flag = 1'b1;
+        #20;
+        wait_flag = 1'b0;
+        
+        //E. SIMULAR ENVÍO DE DATOS DEL ESCLAVO (0x33 = 0011 0011)
         
         // Bit 7 (0)
-        sda_drive_data = 0; // Bajamos línea
-        @(negedge scl);     // Esperamos un ciclo completo
+        sda_drive_data = 0; 
+        @(negedge scl);
         
         // Bit 6 (0)
         sda_drive_data = 0; 
         @(negedge scl);
         
         // Bit 5 (1)
-        sda_drive_data = 1; // Soltamos (High)
+        sda_drive_data = 1; 
         @(negedge scl);
 
         // Bit 4 (1)
@@ -133,31 +190,43 @@ module i2c_core_tb;
         sda_drive_data = 1; 
         @(negedge scl); // Al terminar este ciclo, el Master lee el último bit
 
-        //Comprobacion del dato completo
-        if (data_out == 8'h33) $display("LECTURA CORRECTA! Dato: %h", data_out);
-        else $display("ERROR DE LECTURA. Esperaba 33, llego %h", data_out);
+        
+
+        //1. Esperar a que el core marque op_done (operación completada)
+        wait(op_done == 1);
+        #100;
+
+        //2. Tiempo donde el CPU decide a partir del dato recibido
+        // El Master debe mandar NACK (1) en el último byte de lectura.
+        stop = 1;   // Le indicamos al core que después del ACK haga STOP
+
+        if (data_out == 8'h33) 
+            $display("LECTURA CORRECTA! Dato: %h", data_out);
+        else 
+            $display("ERROR DE LECTURA. Esperaba 33, llego %h", data_out);
+            
+        // 3. Simular que la CPU ya leyó op_done y lo limpia con wait_flag
+        wait_flag = 1'b1;
+        #20;
+        wait_flag = 1'b0;
 
         // -----------------------------------------------------------
         // FASE 3: MASTER ACK Y STOP
         // -----------------------------------------------------------
-
-        // El Master debe mandar NACK (1).
-        // Preparamos la orden de STOP para que el Core sepa qué hacer.
-        stop = 1;
-
         // Esperamos el ciclo de ACK del Master
         @(posedge scl);
-        if (sda === 1'b1) $display("¡EXITO! Master mando NACK correctamente.");
-        else              $display("ERROR: Master debio mandar NACK (1).");
+        if (sda === 1'b1) 
+            $display("¡EXITO! Master mando NACK correctamente.");
+        else              
+            $display("ERROR: Master debio mandar NACK (1).");
         
-        @(negedge scl); // Termina ciclo ACK
-        #20; stop = 0;
+        @(negedge scl); 
+        #20; 
+        stop = 0;
 
         // Fin de la historia
         wait(done == 1);
         #2000;
-                  
-
         $stop;
     end
 
