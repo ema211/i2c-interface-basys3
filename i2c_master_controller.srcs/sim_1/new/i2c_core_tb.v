@@ -10,7 +10,7 @@ module i2c_core_tb;
     reg stop  = 0;
     reg rw    = 0;              // 0=Write, 1=Read
     reg [7:0] data_in = 8'hCB;  // Dato a escribir (11001011)
-    reg [6:0] slave_address = 7'h55; // Dirección del esclavo (1010101)
+    reg [6:0] slave_address = 0; // Dirección del esclavo 
     reg       wait_flag = 0;    // ← ENTRADA al core, la maneja el TB
 
     // Salidas del Core
@@ -68,18 +68,19 @@ module i2c_core_tb;
         ////////A. Generar START y reinicio de bandera////////
         start = 1; 
         rw    = 0; // Write
-        #20; 
-        start = 0;
-
+        slave_address = 7'h23; // Dirección del esclavo BH1750
 
         // Esperar a que el core marque op_done (operación completada)
         wait(op_done == 1);
         #100;
 
-        // Esperar a que el core marque op_done (operación completada)
+        //Tiempo donde el CPU configura nuevos registros y al mismo tie
+        slave_address = 7'h55; // Cambiamos la dirección del esclavo
+
+        // CPU ya leyó op_done y lo limpia con wait_flag
         wait_flag = 1'b1;
         #20;
-        wait_flag = 1'b0;
+        wait_flag = 1'b0;        
 
         //////// B. Dirección (Write)////////
         //1. Mandar direccion al bus
@@ -121,22 +122,29 @@ module i2c_core_tb;
 
         //4. Tiempo donde el CPU configura nuevos registros
         // En lugar de STOP, mandamos START de nuevo para lectura
-        start = 1; 
-        #200;
-        start = 0;
+
         
         // 5. Simular que la CPU ya leyó op_done y lo limpia con wait_flag
         wait_flag = 1'b1;
         #20;
         wait_flag = 1'b0;
+        start = 1; 
+        #20000;
+        start = 0;
 
+        wait(op_done == 1);
+        #100;
+        wait_flag = 1'b1;
+        #20;
+        wait_flag = 1'b0;
         // -----------------------------------------------------------
         // FASE 2: LECTURA (Address + Read Byte)
         // -----------------------------------------------------------
         // D. Dirección (Read)
         //1. Mandar direccion al bus
         repeat(8) @(posedge scl);
-
+        //4. Tiempo donde el CPU configura nuevos registros
+        rw    = 1; // CAMBIO A LECTUR
         //2. Esclavo escribe ack
         @(negedge scl); #2500;
         ack_force = 0; // ACK del Esclavo
@@ -148,8 +156,7 @@ module i2c_core_tb;
         wait(op_done == 1);
         #100;
 
-        //4. Tiempo donde el CPU configura nuevos registros
-        rw    = 1; // CAMBIO A LECTUR
+
 
         // 5. Simular que la CPU ya leyó op_done y lo limpia con wait_flag
         wait_flag = 1'b1;
@@ -191,14 +198,14 @@ module i2c_core_tb;
         @(negedge scl); // Al terminar este ciclo, el Master lee el último bit
 
         
-
+        
         //1. Esperar a que el core marque op_done (operación completada)
         wait(op_done == 1);
         #100;
 
         //2. Tiempo donde el CPU decide a partir del dato recibido
         // El Master debe mandar NACK (1) en el último byte de lectura.
-        stop = 1;   // Le indicamos al core que después del ACK haga STOP
+        
 
         if (data_out == 8'h33) 
             $display("LECTURA CORRECTA! Dato: %h", data_out);
@@ -221,12 +228,18 @@ module i2c_core_tb;
             $display("ERROR: Master debio mandar NACK (1).");
         
         @(negedge scl); 
-        #20; 
-        stop = 0;
+        stop = 1;   // Le indicamos al core que después del ACK haga STOP
+        #20000; 
+        wait(op_done == 1);
+        #100;
+        wait_flag = 1'b1;
+        #20;
+        wait_flag = 1'b0;
 
-        // Fin de la historia
-        wait(done == 1);
+
+
         #2000;
+
         $stop;
     end
 

@@ -85,6 +85,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
 
     reg [3:0] state;
     reg [3:0] next_state;
+    reg [3:0] prev_state;
     
     // Banderas de Transición
     reg       is_restart; 
@@ -104,6 +105,9 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
             state       <= ST_IDLE;
             dr_reg      <= 0;
             is_restart  <= 1'b0;
+            prev_state  <= ST_IDLE;
+            op_done     <= 1'b0;
+            
 
 
         end
@@ -205,25 +209,9 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                     
                     //Control de salida
                     if (phase == 2'b11 && phase_tick_end) begin
-                        if (ack_error == 1'b0) begin 
-                            if (stop) begin
-                                next_state     <= ST_STOP;
-                            end else if (start) begin
-                                bit_cnt      <= 3'd7;
-                                dr_reg       <= {slave_address, rw}; 
-                                is_restart   <= 1'b1;
-                                next_state        <= ST_START;
-                            end else begin
-                                dr_reg     <= data_in;
-                                bit_cnt    <= 3'd7;
-                                next_state      <= ST_WR;
-                            end
-                        end else begin 
-                            ack_error  <= 1'b1;
-                            next_state <= ST_STOP;
-                        end
                         state <= ST_WAIT;
                         op_done <= 1'b1;
+                        prev_state <= ST_SLV_ACK2;
                     end
                 end
 
@@ -238,10 +226,11 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                         if (bit_cnt == 0) begin
                             data_out <= dr_reg; 
                             next_state    <= ST_MASTER_ACK;
+                            state <= ST_WAIT;
+                            op_done <= 1'b1;
                         end else 
                             bit_cnt <= bit_cnt - 1;
-                        state <= ST_WAIT;
-                        op_done <= 1'b1;
+
                     end   
                 end
 
@@ -251,17 +240,9 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
         
                     //Control de salida
                     if (phase == 2'b11 && phase_tick_end) begin
-                        if (stop) begin
-                            state     <= ST_STOP;
-                        end else if (start) begin
-                            dr_reg       <= {slave_address, rw}; 
-                            bit_cnt      <= 3'd7;
-                            is_restart   <= 1'b1;
-                            state        <= ST_START;
-                        end else begin
-                            bit_cnt   <= 3'd7;
-                            state     <= ST_RD;
-                        end
+                        state <= ST_WAIT;
+                        op_done <= 1'b1;
+                        prev_state <=  ST_MASTER_ACK;
                     end
                 end
 
@@ -288,13 +269,53 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                         state <= ST_IDLE;
                     end
                 end
-////////////////CAMBIO REALIZADO, PRUEBA////////////////
+                ////////////////CAMBIO REALIZADO, PRUEBA////////////////
                 ST_WAIT: begin
-                    //sda_oe_reg <= 1'b1;
+                    
                     if (wait_flag) op_done <= 1'b0;
+                    if (phase == 2'b11 && phase_tick_end && op_done == 1'b0) begin
+                        
 
-                    if (phase == 2'b11 && phase_tick_end && op_done == 0) 
-                        state <= next_state;
+                        if (prev_state == ST_SLV_ACK2) begin
+                            if (ack_error == 1'b0) begin 
+                                if (stop) begin
+                                    state <= ST_STOP;
+                                end else if (start) begin
+                                    bit_cnt    <= 3'd7;
+                                    dr_reg     <= {slave_address, rw}; 
+                                    is_restart <= 1'b1;
+                                    state      <= ST_START;
+                                end else begin
+                                    dr_reg  <= data_in;
+                                    bit_cnt <= 3'd7;
+                                    state   <= ST_WR;
+                                end
+                            end else begin 
+                                ack_error <= 1'b1;
+                                state     <= ST_STOP;
+                            end
+
+                        end else if (prev_state == ST_MASTER_ACK) begin
+                            if (stop) begin
+                                state <= ST_STOP;
+                            end else if (start) begin
+                                dr_reg     <= {slave_address, rw}; 
+                                bit_cnt    <= 3'd7;
+                                is_restart <= 1'b1;
+                                state      <= ST_START;
+                            end else begin
+                                bit_cnt <= 3'd7;
+                                state   <= ST_RD;
+                            end
+
+                        end else begin
+                            // Para los que usaron next_state (START, ACK1, RD, NACK_ERROR)
+                            state <= next_state;
+                        end
+
+                        // aquí sí, al final del “evento” de WAIT:
+                        prev_state <= ST_IDLE;
+                    end
                 end
 
                 default: begin
