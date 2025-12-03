@@ -322,7 +322,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                 
                 ST_WAIT: begin
                     //----- Control de inicio -----
-                    op_done <= 1'b0; 
+                    if (wait_flag) op_done <= 1'b0; 
 
                     //----- Control de salida -----
                     // Espera a que termine la fase 11

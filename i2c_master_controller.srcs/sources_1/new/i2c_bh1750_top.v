@@ -73,11 +73,12 @@ module bh1750_top (
         STOP1     = 4'd4,
         START2    = 4'd5,
         ADDR2     = 4'd6,
-        READ      = 4'd7;
+        READ      = 4'd7,
+        WAIT_ACTION = 4'd8;
 
     always @(posedge clk or posedge btnC) begin
         if (btnC) begin
-            app_state    <= IDLE;
+            app_state    <= WAIT_ACTION;
             wait_counter <= 24'd0;
             last_byte    <= 8'h00;
 
@@ -94,6 +95,26 @@ module bh1750_top (
 
             case (app_state)
 
+                WAIT_ACTION: begin
+
+                    wait_counter <= 24'd0;
+                    last_byte    <= 8'h00;
+
+                    start_core   <= 1'b0;
+                    stop_core    <= 1'b0;
+                    rw_core      <= 1'b1;     // por defecto lectura
+                    addr_core    <= BH1750_ADDR;
+                    data_in_core <= 8'h00;
+                    wait_flag    <= 1'b0;
+
+                    read_phase   <= 2'd0;
+
+                    // Espera a que el botón de acción sea presionado
+                    if (out_debounced) begin
+                        app_state <= IDLE; // o el siguiente estado deseado
+                    end
+                end
+
                 // -------------------------------------------------
                 // IDLE: Espera global entre ciclos de medición
                 // -------------------------------------------------
@@ -103,13 +124,11 @@ module bh1750_top (
                     stop_core    <= 1'b0;
                     wait_flag    <= 1'b0;
 
-                    if (out_debounced) begin
-                        wait_counter <= wait_counter + 1;
-                        if (wait_counter == 24'd10_000_000) begin // ~100 ms a 100 MHz
-                            wait_counter <= 24'd0;
-                            app_state    <= START1;
-                        end
-                    end 
+                    wait_counter <= wait_counter + 1;
+                    if (wait_counter == 24'd10_000_000) begin // ~100 ms a 100 MHz
+                        wait_counter <= 24'd0;
+                        app_state    <= START1;
+                    end
                 end
 
                 // -------------------------------------------------
@@ -296,12 +315,12 @@ module bh1750_top (
                                     stop_core  <= 1'b1;          // en WAIT con prev_state=MASTER_ACK -> ST_STOP
                                     wait_flag  <= 1'b1;          // liberamos WAIT
                                     read_phase <= 2'd0;
-                                    app_state  <= IDLE;          // terminamos: start-addr-leer-stop
+                                    app_state  <= WAIT_ACTION;          // terminamos: start-addr-leer-stop
                                 end
 
                                 default: begin
                                     read_phase <= 2'd0;
-                                    app_state  <= IDLE;
+                                    app_state  <= WAIT_ACTION;
                                 end
                             endcase
                         end
