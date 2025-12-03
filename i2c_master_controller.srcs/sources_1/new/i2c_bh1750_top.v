@@ -2,7 +2,8 @@
 
 module bh1750_top (
     input  wire clk,    
-    input  wire btnC,     
+    input  wire btnC,  
+    input  wire btnAction,   
 
     inout  wire sda,     
     output wire scl,      
@@ -28,6 +29,7 @@ module bh1750_top (
     wire       ack_error_core;
     wire       op_done_core;
     wire [7:0] data_out_core;
+    wire       out_debounced;
 
     // Instancia del core I2C
     i2c_core #(.F_SCL(100_000)) i2c_core_i (
@@ -101,11 +103,13 @@ module bh1750_top (
                     stop_core    <= 1'b0;
                     wait_flag    <= 1'b0;
 
-                    wait_counter <= wait_counter + 1;
-                    if (wait_counter == 24'd10_000_000) begin // ~100 ms a 100 MHz
-                        wait_counter <= 24'd0;
-                        app_state    <= START1;
-                    end
+                    if (out_debounced) begin
+                        wait_counter <= wait_counter + 1;
+                        if (wait_counter == 24'd10_000_000) begin // ~100 ms a 100 MHz
+                            wait_counter <= 24'd0;
+                            app_state    <= START1;
+                        end
+                    end 
                 end
 
                 // -------------------------------------------------
@@ -327,6 +331,14 @@ module bh1750_top (
         .clk (clk),
         .Seg (Seg),
         .T   (T)
+    );
+
+
+    Debouncer db_fsm_i (
+        .clk        (clk),
+        .rst        (btnC),
+        .sw         (btnAction),
+        .one_shot   (out_debounced)
     );
 
 endmodule

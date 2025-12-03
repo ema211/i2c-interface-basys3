@@ -8,6 +8,8 @@ create_clock -name sys_clk -period 10.000 [get_ports clk]
 # Reset Signal
 set_property PACKAGE_PIN U18 [get_ports { btnC }]
 
+set_property PACKAGE_PIN T18 [get_ports { btnAction }]
+
 ##Sch name = JC1
 set_property PACKAGE_PIN K17 [get_ports {sda}]
 

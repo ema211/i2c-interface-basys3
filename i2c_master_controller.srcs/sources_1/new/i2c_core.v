@@ -10,8 +10,8 @@
 
 module i2c_core#(parameter integer F_SCL = 100_000)(
     // Reloj y reset
-    input  wire        reset,
-    input  wire        clk_system,
+    input  wire        reset,       // señal de reset asíncrono
+    input  wire        clk_system,  // reloj del sistema (100MHz basys3)
 
     // Líneas I2C físicas
     inout  wire        sda,          // entrada/salida de datos
@@ -26,41 +26,59 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
     input wire         wait_flag,
 
     // Salidas de estado
-    output reg         busy,
-    output reg         done,
-    output reg         ack_error,
-    output reg         op_done,
-    output reg [7:0]   data_out
+    output reg         busy,         // indica que el core está ocupado
+    output reg         done,         // indica que se llegó al estado STOP o esta en IDLE
+    output reg         ack_error,    // indica error de ACK (se recibió NACK)
+    output reg         op_done,      // indica que la operación terminó
+    output reg [7:0]   data_out      // dato recibido
     );
 
-    // Registros internos
-    reg [2:0] bit_cnt;
-    reg [7:0] dr_reg;
-    reg  sda_out_reg;
-    reg  sda_oe_reg;
-    wire sda_in;
-    reg  scl_reg;
+    //-------- Registros internos --------
+    // Registros de control
+    reg [2:0]   bit_cnt;               // contador de bits
+    reg [7:0]   dr_reg;                // registro de datos
+
+    // Registro de control de buss SDA y SCL
+    reg         sda_out_reg;           // registro de salida SDA
+    reg         sda_oe_reg;            // habilitación de salida SDA
+    reg         scl_reg;               // registro de salida SCL
+
+    // FSM estados
+    reg [3:0]   state;                 // estado actual
+    reg [3:0]   next_state;            // próximo estado
+    reg [3:0]   prev_state;            // estado previo
+    reg         is_restart;            // indica si la operación es un RESTART
+
+    //-------- Señales internas --------
+    wire        sda_in;                // entrada SDA
+    wire [1:0]  phase;                 // fase del ciclo I2C  
+    wire        phase_tick;            // pulso que indica cambio de fase
+    wire        phase_tick_end;        // pulso que indica fin de fase
 
     // Buffer Tri-estado
-    assign sda    = sda_oe_reg ? sda_out_reg : 1'bz;
-    assign sda_in = sda;
-    assign scl    = scl_reg;
+    // Si sda_oe_reg es 1, el core controla SDA (salida)
+    assign sda    = sda_oe_reg ? sda_out_reg : 1'bz; 
+    assign sda_in = sda;        // lectura de SDA
+    assign scl    = scl_reg;    // salida SCL
 
 
-    /*
+    /*------------------------------ Para phase tick ------------------------------
     Reloj (100MHz):  _-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_
-    Phase (Lento):   ________0000000000________1111111111________2222222222_______
-                    (Dura muchos ciclos)
-    Phase == 00:     TTTTTTTTTT (Verdadero durante muchos ciclos )
+    Phase (Lento):   000000000000000111111111111111111222222222222222222
+    Phase_Tick:      _______________Λ_________________Λ__________________
+                                    ^                 ^
+                                    |                |
+                            "¡Cambié a 01!"      "¡Cambié a 10!"
 
-    Phase_Tick:      _________________Λ__________________________Λ__________________
-                    (Solo 1 ciclo)   ^                          ^
-                                    |                          |
-                            "¡Cambié a 01!"             "¡Cambié a 10!"
-    */
-    wire [1:0]  phase;        
-    wire phase_tick;
+    ------------------------------Para phase tick end------------------------------
+    Reloj (100MHz):  _-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_
+    Phase (Lento):   0000000000000111111111111111111222222222222222222
+    Phase_Tick_End: _____________Λ_________________Λ__________________
+                                ^                 ^
+                                |                |
+                        "Terminó fase 00"    "Terminó fase 01"                  */
     
+    // ---------------- Instancia del generador de fases ----------------
     i2c_phase_generator #(.FRECUENCIA(F_SCL)) phase_gen (
         .reset    (reset),
         .clk_input(clk_system),
@@ -70,6 +88,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
         .tick_end (phase_tick_end)
     );
 
+    // ---------------- Definición de estados de la FSM ----------------
     localparam [3:0]
         ST_IDLE       = 4'd0,
         ST_START      = 4'd1,
@@ -83,33 +102,31 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
         ST_STOP       = 4'd9,
         ST_WAIT       = 4'd10;
 
-    reg [3:0] state;
-    reg [3:0] next_state;
-    reg [3:0] prev_state;
-    
-    // Banderas de Transición
-    reg       is_restart; 
-
     // -------------------------------------------------------------------------
     // BLOQUE 1: FSM PRINCIPAL
     // -------------------------------------------------------------------------
     always @(posedge clk_system or posedge reset) begin
 
         if (reset) begin
+            // Reset de todos los registros y salidas
+            //Salidas
             busy        <= 1'b0;
             done        <= 1'b0;
             ack_error   <= 1'b0;
             data_out    <= 0;
-            bit_cnt     <= 3'd0;
-            sda_oe_reg  <= 1'b0;
-            state       <= ST_IDLE;
-            dr_reg      <= 0;
-            is_restart  <= 1'b0;
-            prev_state  <= ST_IDLE;
-            next_state  <= ST_IDLE;   // ← AÑADE ESTA LÍNEA
             op_done     <= 1'b0;
+            //----- Registros internos -----
+            //Registros de control
+            bit_cnt     <= 3'd0;
+            dr_reg      <= 0;
+            //Registros de control de buss SDA y SCL
+            sda_oe_reg  <= 1'b0;
+            //FSM estados            
+            is_restart  <= 1'b0;
+            state       <= ST_IDLE;
+            prev_state  <= ST_IDLE;
+            next_state  <= ST_IDLE; 
             
-
 
         end
         else begin
@@ -117,31 +134,44 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
             case (state)
 
                 ST_IDLE: begin
-                    busy      <= 1'b0;
-                    done      <= 1'b0;
-                    ack_error <= 1'b0;   
-                    data_out  <= 0;
-                    bit_cnt   <= 3'd0;
-                    sda_oe_reg <= 1'b0;
-                    op_done   <= 1'b0;
+                    //Salidas
+                    busy        <= 1'b0;
+                    done        <= 1'b0;
+                    ack_error   <= 1'b0;
+                    data_out    <= 0;
+                    op_done     <= 1'b0;
+                    //Registros de control
+                    bit_cnt     <= 3'd0;
+                    dr_reg      <= 0;
+                    //Registros de control de buss SDA y SCL
+                    sda_oe_reg  <= 1'b0;
+                    //FSM estados            
+                    is_restart  <= 1'b0;
 
-                    is_restart <= 1'b0;
-                    
+
+                    // Control de salida
+                    //Si se recibe start, se inicia la operación cambiando al estado START
                     if (start) begin
                         busy       <= 1'b1;
                         done       <= 1'b0;
+
                         bit_cnt    <= 3'd7;
-                        dr_reg     <= {slave_address, rw}; 
+                        dr_reg     <= {slave_address, rw}; // carga de dirección y bit R/W
+                        
                         state      <= ST_START;
                     end
                 end
 
                 ST_START: begin
-                    //Control de inicio
-                    sda_oe_reg <= 1'b1;
+                    //----- Control de inicio -----
+                    // Registro de habilitación de salida SDA
+                    sda_oe_reg <= 1'b1; // Se toma control de SDA
 
-                    //Control de salida
+                    //----- Control de salida -----
+                    // Espera a que termine la fase 11
                     if (phase == 2'b11 && phase_tick_end) begin 
+                        // Preparación del siguiente estado
+                        //Como este estado requiere esperar despues de enviarse, se usa next_state
                         next_state <= ST_ADDRRW;
                         state <= ST_WAIT;
                         is_restart <= 1'b0;
@@ -150,11 +180,13 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                 end
 
                 ST_ADDRRW: begin
-                    //Control de inicio
-                    sda_oe_reg <= 1'b1; 
+                    //----- Control de inicio -----
+                    sda_oe_reg <= 1'b1; // Se toma control de SDA
 
-                    //Control de salida
+                    //----- Control de salida -----
+                    // Espera a que termine la fase 11
                     if (phase == 2'b11 && phase_tick_end) begin
+                        // No cambia de estado hasta enviar todos los bits
                         if (bit_cnt == 0) begin   
                             state <= ST_SLV_ACK1;
                         end else 
@@ -163,38 +195,47 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                 end
 
                 ST_SLV_ACK1: begin
-                    //Control de inicio
+                    //----- Control de inicio -----
                     sda_oe_reg <= 1'b0; 
                     if (phase == 2'b00 && phase_tick) ack_error <= 1'b0;
-                        
+                    
                     //Lectura de ACK justo a la mitad de scl positivo
                     if (phase == 2'b10 && phase_tick) ack_error <= sda_in; 
 
-                    //Control de salida
+                    //----- Control de salida -----
+                    // Espera a que termine la fase 11
                     if (phase == 2'b11 && phase_tick_end) begin  
+                        //Si no hubo error de ACK, se prepara el siguiente estado según rw
                         if (ack_error == 1'b0) begin 
                             if (rw == 1'b0) begin
+                                //Write
                                 dr_reg     <= data_in;
                                 bit_cnt    <= 3'd7;
                                 next_state      <= ST_WR; 
                             end else begin
+                                //Read
                                 bit_cnt    <= 3'd7;
                                 next_state      <= ST_RD; 
                             end
                         end else begin 
-
+                            //NACK error
                             ack_error  <= 1'b1;
                             next_state <= ST_STOP;
                         end
+                        // Este estado tambien requiere esperar, se usa next_state
                         state <= ST_WAIT;
                         op_done <= 1'b1;
                     end
                 end
 
                 ST_WR: begin
+                    //----- Control de inicio -----
                     sda_oe_reg <= 1'b1;
-                        
+                    
+                    //----- Control de salida -----
+                    // Espera a que termine la fase 11
                     if (phase == 2'b11 && phase_tick_end) begin
+                        // No cambia de estado hasta enviar todos los bits
                         if (bit_cnt == 0) begin   
                             state <= ST_SLV_ACK2;
                         end else 
@@ -203,44 +244,52 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                 end
 
                 ST_SLV_ACK2: begin
-                    //Control de inicio
+                    //----- Control de inicio -----
                     sda_oe_reg <= 1'b0;
 
+                    // Se lee el ACK a mitad de scl positivo
                     if (phase == 2'b10 && phase_tick) ack_error <= sda_in;   
                     
-                    //Control de salida
+                    //----- Control de salida -----
+                    // Espera a que termine la fase 11
                     if (phase == 2'b11 && phase_tick_end) begin
+                        // Este estado tambien requiere esperar
+                        //Despues de este estado se decide el siguiente estado en WAIT 
                         state <= ST_WAIT;
                         op_done <= 1'b1;
-                        prev_state <= ST_SLV_ACK2;
+                        prev_state <= ST_SLV_ACK2; //por eso prev_state se guarda aquí
                     end
                 end
 
                 ST_RD: begin
-                    //Control de inicio
+                    //----- Control de inicio -----
                     sda_oe_reg <= 1'b0; 
-
+                    
+                    // Se lee el bit de datos a mitad de scl positivo
                     if (phase == 2'b10 && phase_tick) dr_reg[bit_cnt] <= sda_in; 
 
-                    //Control de salida
+                    //----- Control de salida -----
+                    // Espera a que termine la fase 11
                     if (phase == 2'b11 && phase_tick_end) begin
+                        // No cambia de estado hasta recibir todos los bits
                         if (bit_cnt == 0) begin
-                            data_out <= dr_reg; 
+                            // Este estado tambien requiere esperar
+                            data_out <= dr_reg;  // se guarda el dato recibido
                             next_state    <= ST_MASTER_ACK;
                             state <= ST_WAIT;
                             op_done <= 1'b1;
                         end else 
                             bit_cnt <= bit_cnt - 1;
-
                     end   
                 end
 
                 ST_MASTER_ACK: begin
-                    //Control de inicio
+                    //----- Control de inicio -----
                     sda_oe_reg <= 1'b1; 
         
-                    //Control de salida
+                    //----- Control de salida -----
                     if (phase == 2'b11 && phase_tick_end) begin
+                        // Este estado tambien requiere esperar para decidir la siguiente acción
                         state <= ST_WAIT;
                         op_done <= 1'b1;
                         prev_state <=  ST_MASTER_ACK;
@@ -248,62 +297,72 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                 end
 
                 ST_NACK_ERROR: begin
-                    //Control de inicio
+                    //----- Control de inicio -----
                     sda_oe_reg <= 1'b1;
                     ack_error  <= 1'b1;
 
-                    //Control de salida
+                    //----- Control de salida -----
                     if (phase == 2'b11 && phase_tick_end) begin
                         next_state <= ST_STOP;  // después del error vamos a STOP
-                        state      <= ST_WAIT;  // pero primero pasamos por WAIT bloqueante
-                        op_done    <= 1'b1;     // avisamos al CPU que hubo evento (con error)
+                        state      <= ST_WAIT;  // pero primero pasamos por WAIT 
+                        op_done    <= 1'b1;     
                     end
                 end
                 ST_STOP: begin
-                    //Control de inicio
+                    //----- Control de inicio -----
                     sda_oe_reg <= 1'b1;
 
-                    //Control de salida
+                    //----- Control de salida -----
                     if (phase == 2'b11 && phase_tick_end) begin
-                        busy  <= 1'b0;
-                        done  <= 1'b1;
-                        state <= ST_IDLE;
+                        busy  <= 1'b0; // Se indica que el core ya no está ocupado
+                        done  <= 1'b1; // Se indica que la operación ha terminado
+                        state <= ST_IDLE; // Se regresa a IDLE
                     end
                 end
-                ////////////////CAMBIO REALIZADO, PRUEBA////////////////
+                
                 ST_WAIT: begin
-                    
-                    if (wait_flag) op_done <= 1'b0;
-                    if (phase == 2'b11 && phase_tick_end && op_done == 1'b0) begin
-                        
+                    //----- Control de inicio -----
+                    op_done <= 1'b0; 
 
+                    //----- Control de salida -----
+                    // Espera a que termine la fase 11
+                    if (phase == 2'b11 && phase_tick_end && op_done == 1'b0) begin
+                        // Decisión del siguiente estado según el estado previo
                         if (prev_state == ST_SLV_ACK2) begin
+                            // Si no hubo error de ACK, se prepara el siguiente estado
                             if (ack_error == 1'b0) begin 
+                                //Si se quiere terminar la comunicación se debio de activar stop
                                 if (stop) begin
                                     state <= ST_STOP;
+                                        // Si se quiere un RESTART se debio de activar start
                                 end else if (start) begin
                                     bit_cnt    <= 3'd7;
                                     dr_reg     <= {slave_address, rw}; 
                                     is_restart <= 1'b1;
                                     state      <= ST_START;
+                                        //Si se quiere seguir escribiendo dejamos start y stop en 0
                                 end else begin
                                     dr_reg  <= data_in;
                                     bit_cnt <= 3'd7;
                                     state   <= ST_WR;
                                 end
                             end else begin 
+                                //NACK error
                                 ack_error <= 1'b1;
                                 state     <= ST_STOP;
                             end
 
                         end else if (prev_state == ST_MASTER_ACK) begin
+                            // Si se quiere terminar la comunicación se debio de activar stop
                             if (stop) begin
                                 state <= ST_STOP;
+                                // Si se quiere un RESTART se debio de activar start
                             end else if (start) begin
                                 dr_reg     <= {slave_address, rw}; 
                                 bit_cnt    <= 3'd7;
                                 is_restart <= 1'b1;
                                 state      <= ST_START;
+                                //Si se quiere seguir leyendo dejamos start y stop en 0
                             end else begin
                                 bit_cnt <= 3'd7;
                                 state   <= ST_RD;
@@ -314,7 +373,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                             state <= next_state;
                         end
 
-                        // aquí sí, al final del “evento” de WAIT:
+                        // Reinicio de prev_state
                         prev_state <= ST_IDLE;
                     end
                 end
@@ -328,8 +387,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
     end
     
 
-    /*
-    Diagrama de tiempos I2C durante una transmisión completa.
+    /* ------------------------------ Diagrama de tiempos I2C durante una transmisión completa ------------------------------
     ESTADO:    [ IDLE ] [     START    ]  [    BIT(1)    ] [...] [      RD    ]  [...]  [    BIT(0)     ]    [      STOP    ]
     FASE:       (fijo)   00  01  10  11    00  01  10  11        00  01  10  11        00  01  10  11     00  01  10  11
 
@@ -337,22 +395,26 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                         |   |   |   |  |   |   |   |             |   |   |   |         |   |   |   |      |   |   |   |
     SDA:   ... 11111111 1111111100000000  1111111111111111  ...  zzzzzzzzzzzzzzzz  ... 0000000000000000   0000000011111111
                             ^          ^       ^              ^       ^             ^       ^          ^       ^
-    Eventos:                 START      Setup   Hold          Setup    Hold         Setup     STOP        Setup     STOP
-    */
+    Eventos:                 START      Setup   Hold          Setup    Hold         Setup     STOP        Setup     STOP */
+
 
     // -------------------------------------------------------------------------
     // BLOQUE 2: GENERADOR DE SEÑALES FÍSICAS  
     // -------------------------------------------------------------------------
     always @(posedge clk_system or posedge reset) begin
         if (reset) begin
-            sda_out_reg <= 1'b1; 
+            //En reinicio las señales SDA y SCL están en alto como en IDLE
+            sda_out_reg <= 1'b1;
             scl_reg     <= 1'b1; 
         end
         else begin
             case (state)
+
+                // Se genera START  bajando SDA mientras SCL está en alto
                 ST_START: begin
                     case (phase)
                         2'b00: begin 
+                            // Si es RESTART, SCL ya esta en bajo por lo que no se cambia
                             scl_reg <= (is_restart) ? 1'b0 : 1'b1; 
                             sda_out_reg <= 1'b1;  
                             end
@@ -362,6 +424,7 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                     endcase
                 end
 
+                // Se genera STOP subiendo SDA mientras SCL está en alto
                 ST_STOP: begin
                     case (phase)
                         2'b00: begin sda_out_reg <= 1'b0; scl_reg <= 1'b0; end 
@@ -371,10 +434,13 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                     endcase
                 end
 
+                // En IDLE ambas líneas están en alto
                 ST_IDLE: begin
                     sda_out_reg <= 1'b1; scl_reg <= 1'b1; 
                 end
 
+                // SDA se define segun el siguiente estado despues 
+                // de MASTER_ACK segun previas configuraciones
                 ST_MASTER_ACK: begin
                     case (phase)
                         2'b00: begin sda_out_reg <= start|stop; scl_reg <= 1'b0; end
@@ -384,18 +450,24 @@ module i2c_core#(parameter integer F_SCL = 100_000)(
                     endcase
                 end
 
+                // En caso de error NACK, se mantiene SCL en bajo
                 ST_NACK_ERROR: begin
                     scl_reg    <= 1'b0; 
                 end
 
+                // En WAIT, se mantiene scl en bajo sin importar SDA
+                // Si scl esta en bajo los esclabos no "escuchan" 
                 ST_WAIT: begin
-                    sda_out_reg <= 1'b0;
                     scl_reg <= 1'b0;                    
                 end
 
+                // En los demás estados (ADDRRW, SLV_ACK1, WR, SLV_ACK2, RD)
+                // Se genera el reloj perfectamente coordinado con SDA
                 default: begin
                     case (phase)
                         2'b00: begin
+                            // Si se está enviando un bit, se coloca el valor en SDA
+                            // Si se está leyendo, SDA se deja en alta impedancia
                             if (sda_oe_reg)
                                 sda_out_reg <= dr_reg[bit_cnt]; 
                             scl_reg <= 1'b0; 
